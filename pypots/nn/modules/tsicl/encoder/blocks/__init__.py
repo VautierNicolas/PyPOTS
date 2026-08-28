@@ -1,0 +1,19 @@
+# Vendored from the TS-ICL model architecture: https://github.com/EDF-Lab/ts-icl
+# Copyright (c) 2026 EDF SA. Licensed under the TS-ICL Non-Commercial License v1.0,
+# NOT under PyPOTS' BSD-3-Clause license. See the NOTICE file in pypots/nn/modules/tsicl/
+# for the full license text and restrictions (non-commercial research/evaluation use only).
+
+from __future__ import annotations
+
+from .attention import Attention, MultiScaleAttention, CrossAttention, FeedForward
+from .utils import PreNorm, PreNormCross
+
+__all__ = [
+    "Attention",
+    "MultiScaleAttention",
+    "CrossAttention",
+    "FeedForward",
+    "PreNorm",
+    "PreNormCross"
+
+]
