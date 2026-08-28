@@ -8,12 +8,11 @@
 The core imputation logic of TS-ICL, ported from the (zero-shot, gradient-free)
 ``TSICL.impute()`` pipeline of the original implementation. Covariates are out of
 scope here since PyPOTS' imputation contract has no notion of them. The checkpoint
-loading and context/target grid plumbing shared with ``pypots.forecasting.tsicl``
-live in ``pypots.nn.modules.tsicl``.
+loading, batching, and context/target grid plumbing shared with
+``pypots.forecasting.tsicl`` live in ``pypots.nn.modules.tsicl``.
 
 """
 
-import warnings
 from typing import List, Optional
 
 import numpy as np
@@ -23,9 +22,13 @@ from einops import repeat
 
 from ...nn.modules.tsicl import (
     CustomStandardScaler,
-    get_quantile_indices,
+    flatten_channel_independent,
     make_grid,
+    nan_row_fallback,
     prepare_context_tensors,
+    resolve_quantile_selection,
+    run_batched_point_estimate,
+    unflatten_channel_independent,
 )
 
 
@@ -73,45 +76,25 @@ def impute_with_tsicl(
     (TS-ICL models one series at a time; see the channel-independence note in ``TSICL``'s
     docstring).
     """
-    quantile_levels = quantile_levels or [0.1, 0.3, 0.5, 0.7, 0.9]
-    quantile_indices = get_quantile_indices(imputer, quantile_levels)
-    median_idx = quantile_levels.index(0.5) if 0.5 in quantile_levels else None
-    if point_estimator == "median" and median_idx is None:
-        point_estimator = "mean"
-
-    n_samples, n_steps, n_features = X.shape
-    flat = X.astype(np.float32).transpose(0, 2, 1).reshape(n_samples * n_features, n_steps)
+    quantile_indices, median_idx, point_estimator = resolve_quantile_selection(
+        imputer, point_estimator, quantile_levels
+    )
+    flat, n_samples, n_features = flatten_channel_independent(X)
+    n_steps = flat.shape[1]
     imputer = imputer.to(device)
 
-    out = np.empty_like(flat)
-    for start in range(0, len(flat), batch_size):
-        batch = flat[start : start + batch_size]
-        series_c = torch.tensor(batch, dtype=torch.float32, device=device).unsqueeze(-1)
-        grid = make_grid(n_steps, num_samples=len(batch)).to(device)
+    def predict_batch_fn(series_c: torch.Tensor) -> torch.Tensor:
+        grid = make_grid(n_steps, num_samples=series_c.shape[0]).to(device)
+        return _predict_batch(imputer, grid, series_c)
 
-        with torch.no_grad():
-            quantiles = _predict_batch(imputer, grid, series_c)[..., quantile_indices]
-
-        if point_estimator == "median":
-            point = quantiles[..., median_idx : median_idx + 1]
-        else:
-            point = quantiles.mean(-1, keepdim=True)
-        out[start : start + batch_size] = point.squeeze(-1).cpu().numpy()
-
-    # safety net: fall back to the per-row mean (or 0 if the whole row is missing) wherever
-    # the model still produced NaN, e.g. for rows with too few observed points to condition on
-    if not np.isfinite(out).all():
-        with warnings.catch_warnings():
-            # nanmean on an all-NaN row (fully-missing series) warns; the nan_to_num fallback handles it
-            warnings.filterwarnings("ignore", message="Mean of empty slice")
-            row_fallback = np.nan_to_num(
-                np.nanmean(np.where(np.isfinite(flat), flat, np.nan), axis=1, keepdims=True), nan=0.0
-            )
-        out = np.where(np.isfinite(out), out, row_fallback)
+    out = run_batched_point_estimate(
+        flat, n_steps, batch_size, device, quantile_indices, point_estimator, median_idx, predict_batch_fn
+    )
+    out = nan_row_fallback(out, flat)
 
     # belt and suspenders: observed values are carried through bit-exact, regardless of how
     # faithfully the model's own replace_by_gt round-trip (z-normalize / denormalize) preserved them
     observed = np.isfinite(flat)
     out = np.where(observed, flat, out)
 
-    return out.reshape(n_samples, n_features, n_steps).transpose(0, 2, 1)
+    return unflatten_channel_independent(out, n_samples, n_features)

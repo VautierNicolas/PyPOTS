@@ -8,12 +8,11 @@
 The core forecasting logic of TS-ICL, ported from the (zero-shot, gradient-free)
 ``TSICL.forecast()`` pipeline of the original implementation. Covariates are out of
 scope here since PyPOTS' forecasting contract has no notion of them. The checkpoint
-loading and context/target grid plumbing shared with ``pypots.imputation.tsicl`` live
-in ``pypots.nn.modules.tsicl``.
+loading, batching, and context/target grid plumbing shared with
+``pypots.imputation.tsicl`` live in ``pypots.nn.modules.tsicl``.
 
 """
 
-import warnings
 from typing import List, Optional
 
 import numpy as np
@@ -23,9 +22,13 @@ import torch.nn as nn
 from ...nn.modules.tsicl import (
     CustomStandardScaler,
     complete_nans,
-    get_quantile_indices,
+    flatten_channel_independent,
     make_grid,
+    nan_row_fallback,
     prepare_context_tensors,
+    resolve_quantile_selection,
+    run_batched_point_estimate,
+    unflatten_channel_independent,
 )
 
 
@@ -104,51 +107,24 @@ def forecast_with_tsicl(
     is silently truncated to the most recent ``context_length`` steps rather than rejected if
     longer than the model supports, matching the original pipeline's forecasting behavior.
     """
-    quantile_levels = quantile_levels or [0.1, 0.3, 0.5, 0.7, 0.9]
-    quantile_indices = get_quantile_indices(forecaster, quantile_levels)
-    median_idx = quantile_levels.index(0.5) if 0.5 in quantile_levels else None
-    if point_estimator == "median" and median_idx is None:
-        point_estimator = "mean"
-
+    quantile_indices, median_idx, point_estimator = resolve_quantile_selection(
+        forecaster, point_estimator, quantile_levels
+    )
     this_context_length = min(max_context_length, context_length) if context_length else max_context_length
     grid_len = max_context_length + max_target_length
 
-    n_samples, n_steps, n_features = X.shape
-    flat = X.astype(np.float32).transpose(0, 2, 1).reshape(n_samples * n_features, n_steps)
+    flat, n_samples, n_features = flatten_channel_independent(X)
     forecaster = forecaster.to(device)
 
-    out = np.empty((flat.shape[0], prediction_length), dtype=np.float32)
-    for start in range(0, len(flat), batch_size):
-        batch = flat[start : start + batch_size]
-        series_c = torch.tensor(batch, dtype=torch.float32, device=device).unsqueeze(-1)
-        grid = make_grid(grid_len, num_samples=len(batch)).to(device)
+    def predict_batch_fn(series_c: torch.Tensor) -> torch.Tensor:
+        grid = make_grid(grid_len, num_samples=series_c.shape[0]).to(device)
+        return _rollout_forecast_batch(
+            forecaster, grid, series_c, prediction_length, max_context_length, max_target_length, this_context_length
+        )
 
-        with torch.no_grad():
-            quantiles = _rollout_forecast_batch(
-                forecaster,
-                grid,
-                series_c,
-                prediction_length,
-                max_context_length,
-                max_target_length,
-                this_context_length,
-            )[..., quantile_indices]
+    out = run_batched_point_estimate(
+        flat, prediction_length, batch_size, device, quantile_indices, point_estimator, median_idx, predict_batch_fn
+    )
+    out = nan_row_fallback(out, flat)
 
-        if point_estimator == "median":
-            point = quantiles[..., median_idx : median_idx + 1]
-        else:
-            point = quantiles.mean(-1, keepdim=True)
-        out[start : start + batch_size] = point.squeeze(-1).cpu().numpy()
-
-    # safety net: fall back to the per-row mean of the (observed part of the) context
-    # wherever the model still produced NaN, e.g. for rows with a fully-missing context
-    if not np.isfinite(out).all():
-        with warnings.catch_warnings():
-            # nanmean on an all-NaN row (fully-missing context) warns; nan_to_num handles it
-            warnings.filterwarnings("ignore", message="Mean of empty slice")
-            row_fallback = np.nan_to_num(
-                np.nanmean(np.where(np.isfinite(flat), flat, np.nan), axis=1, keepdims=True), nan=0.0
-            )
-        out = np.where(np.isfinite(out), out, row_fallback)
-
-    return out.reshape(n_samples, n_features, prediction_length).transpose(0, 2, 1)
+    return unflatten_channel_independent(out, n_samples, n_features)

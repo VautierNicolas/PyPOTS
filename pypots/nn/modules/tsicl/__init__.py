@@ -20,10 +20,16 @@ from .inference_utils import (
     CustomStandardScaler,
     build_tsicl_network,
     complete_nans,
+    fetch_X,
+    flatten_channel_independent,
     get_quantile_indices,
     load_tsicl_checkpoint,
     make_grid,
+    nan_row_fallback,
     prepare_context_tensors,
+    resolve_quantile_selection,
+    run_batched_point_estimate,
+    unflatten_channel_independent,
 )
 
 __all__ = [
@@ -38,8 +44,14 @@ __all__ = [
     "CustomStandardScaler",
     "build_tsicl_network",
     "complete_nans",
+    "fetch_X",
+    "flatten_channel_independent",
     "get_quantile_indices",
     "load_tsicl_checkpoint",
     "make_grid",
+    "nan_row_fallback",
     "prepare_context_tensors",
+    "resolve_quantile_selection",
+    "run_batched_point_estimate",
+    "unflatten_channel_independent",
 ]

@@ -16,13 +16,11 @@ The implementation of TS-ICL for the partially-observed time-series imputation t
 import warnings
 from typing import List, Optional, Union
 
-import h5py
-import numpy as np
 import torch
 
 from .core import impute_with_tsicl
 from ..base import BaseImputer
-from ...nn.modules.tsicl import build_tsicl_network, load_tsicl_checkpoint
+from ...nn.modules.tsicl import build_tsicl_network, fetch_X, load_tsicl_checkpoint
 
 
 class TSICL(BaseImputer):
@@ -119,23 +117,6 @@ class TSICL(BaseImputer):
         self.imputer = build_tsicl_network(checkpoint, "imputer")
         self.max_context_length = checkpoint["config"]["max_context_len"]
 
-    @staticmethod
-    def _fetch_X(data: Union[dict, str], file_type: str = "hdf5") -> np.ndarray:
-        if isinstance(data, str):
-            with h5py.File(data, "r") as f:
-                X = f["X"][:]
-        else:
-            X = data["X"]
-        if isinstance(X, list):
-            X = np.asarray(X)
-        if isinstance(X, torch.Tensor):
-            X = X.detach().cpu().numpy()
-        assert len(X.shape) == 3, (
-            f"Input X should have 3 dimensions [n_samples, n_steps, n_features], "
-            f"but the actual shape of X: {X.shape}"
-        )
-        return X
-
     def _check_len(self, n_steps: int) -> None:
         if n_steps > self.max_context_length:
             raise ValueError(
@@ -168,7 +149,7 @@ class TSICL(BaseImputer):
         file_type: str = "hdf5",
         **kwargs,
     ) -> dict:
-        X = self._fetch_X(test_set, file_type)
+        X = fetch_X(test_set, file_type)
         self._check_len(X.shape[1])
 
         imputed_data = impute_with_tsicl(

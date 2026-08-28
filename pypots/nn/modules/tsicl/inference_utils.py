@@ -16,9 +16,11 @@ z-normalization, and context/target grid construction) shared by
 # it loads are under the TS-ICL Non-Commercial License v1.0, see this package's NOTICE.
 
 import importlib
+import warnings
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
+import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -221,3 +223,111 @@ def get_quantile_indices(network: nn.Module, quantile_levels: List[float]) -> Li
     if not set(requested).issubset(training_quantile_levels):
         raise ValueError(f"quantile_levels={quantile_levels} must be a subset of TS-ICL's trained quantiles.")
     return [training_quantile_levels.index(q) for q in requested]
+
+
+def fetch_X(data: Union[dict, str], file_type: str = "hdf5") -> np.ndarray:
+    """Load the ``X`` array from a PyPOTS dict/H5-file dataset, as both ``TSICL`` model
+    classes (imputation and forecasting) expect it: shape `(n_samples, n_steps, n_features)`,
+    NaNs allowed.
+    """
+    if isinstance(data, str):
+        with h5py.File(data, "r") as f:
+            X = f["X"][:]
+    else:
+        X = data["X"]
+    if isinstance(X, list):
+        X = np.asarray(X)
+    if isinstance(X, torch.Tensor):
+        X = X.detach().cpu().numpy()
+    assert len(X.shape) == 3, (
+        f"Input X should have 3 dimensions [n_samples, n_steps, n_features], "
+        f"but the actual shape of X: {X.shape}"
+    )
+    return X
+
+
+def resolve_quantile_selection(
+    network: nn.Module,
+    point_estimator: str,
+    quantile_levels: Optional[List[float]],
+) -> Tuple[List[int], Optional[int], str]:
+    """Resolve the requested quantile levels to indices in the network's output head, and
+    fall back from ``'median'`` to ``'mean'`` if 0.5 wasn't requested (there'd be no median
+    to report).
+    """
+    quantile_levels = quantile_levels or [0.1, 0.3, 0.5, 0.7, 0.9]
+    quantile_indices = get_quantile_indices(network, quantile_levels)
+    median_idx = quantile_levels.index(0.5) if 0.5 in quantile_levels else None
+    if point_estimator == "median" and median_idx is None:
+        point_estimator = "mean"
+    return quantile_indices, median_idx, point_estimator
+
+
+def flatten_channel_independent(X: np.ndarray) -> Tuple[np.ndarray, int, int]:
+    """Flatten a `(n_samples, n_steps, n_features)` array into `(n_samples * n_features,
+    n_steps)`, one row per univariate series (TS-ICL models one series at a time; see the
+    channel-independence note in ``TSICL``'s docstring).
+    """
+    n_samples, n_steps, n_features = X.shape
+    flat = X.astype(np.float32).transpose(0, 2, 1).reshape(n_samples * n_features, n_steps)
+    return flat, n_samples, n_features
+
+
+def unflatten_channel_independent(out: np.ndarray, n_samples: int, n_features: int) -> np.ndarray:
+    """Undo :func:`flatten_channel_independent`, folding the per-series rows of `out`
+    `(n_samples * n_features, output_len)` back into `(n_samples, output_len, n_features)`.
+    """
+    output_len = out.shape[1]
+    return out.reshape(n_samples, n_features, output_len).transpose(0, 2, 1)
+
+
+def nan_row_fallback(out: np.ndarray, flat: np.ndarray) -> np.ndarray:
+    """Safety net: fall back to the per-row mean of the observed part of `flat` (or 0 if
+    the whole row is missing) wherever `out` still holds NaN, e.g. for rows with too few
+    observed points to condition the model on.
+    """
+    if np.isfinite(out).all():
+        return out
+    with warnings.catch_warnings():
+        # nanmean on an all-NaN row (fully-missing series) warns; nan_to_num handles it
+        warnings.filterwarnings("ignore", message="Mean of empty slice")
+        row_fallback = np.nan_to_num(
+            np.nanmean(np.where(np.isfinite(flat), flat, np.nan), axis=1, keepdims=True), nan=0.0
+        )
+    return np.where(np.isfinite(out), out, row_fallback)
+
+
+def run_batched_point_estimate(
+    flat: np.ndarray,
+    output_len: int,
+    batch_size: int,
+    device: torch.device,
+    quantile_indices: List[int],
+    point_estimator: str,
+    median_idx: Optional[int],
+    predict_batch_fn: Callable[[torch.Tensor], torch.Tensor],
+) -> np.ndarray:
+    """Run `predict_batch_fn` batch-wise over `flat` (`n_series, n_steps`, one univariate
+    series per row) and extract the requested point estimate from its predicted quantiles.
+
+    This is the batching/point-estimate harness shared by ``impute_with_tsicl`` and
+    ``forecast_with_tsicl``; the per-batch TS-ICL forward pass itself (context/target grid
+    construction, single-pass vs. autoregressive rollout) is task-specific and supplied by
+    the caller as `predict_batch_fn`, which takes a `(bs, n_steps, 1)` context tensor and
+    returns its predicted quantiles of shape `(bs, output_len, num_quantiles)`.
+    """
+    out = np.empty((flat.shape[0], output_len), dtype=np.float32)
+    for start in range(0, len(flat), batch_size):
+        batch = flat[start : start + batch_size]
+        series_c = torch.tensor(batch, dtype=torch.float32, device=device).unsqueeze(-1)
+
+        with torch.no_grad():
+            quantiles = predict_batch_fn(series_c)[..., quantile_indices]
+
+        if point_estimator == "median":
+            point = quantiles[..., median_idx : median_idx + 1]
+        else:
+            point = quantiles.mean(-1, keepdim=True)
+        out[start : start + batch_size] = point.squeeze(-1).cpu().numpy()
+
+    return out
