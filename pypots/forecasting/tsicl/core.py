@@ -1,0 +1,154 @@
+# Vendored (forecasting-only) inference logic ported from the TS-ICL pipeline:
+# https://github.com/EDF-Lab/ts-icl (src/tsicl/pipeline.py, src/tsicl/utils/*).
+# Copyright (c) 2026 EDF SA. Licensed under the TS-ICL Non-Commercial License v1.0,
+# NOT under PyPOTS' BSD-3-Clause license. See the NOTICE file in this directory
+# for the full license text and restrictions (non-commercial research/evaluation use only).
+
+"""
+The core forecasting logic of TS-ICL, ported from the (zero-shot, gradient-free)
+``TSICL.forecast()`` pipeline of the original implementation. Covariates are out of
+scope here since PyPOTS' forecasting contract has no notion of them. The checkpoint
+loading and context/target grid plumbing shared with ``pypots.imputation.tsicl`` live
+in ``pypots.nn.modules.tsicl``.
+
+"""
+
+import warnings
+from typing import List, Optional
+
+import numpy as np
+import torch
+import torch.nn as nn
+
+from ...nn.modules.tsicl import (
+    CustomStandardScaler,
+    complete_nans,
+    get_quantile_indices,
+    make_grid,
+    prepare_context_tensors,
+)
+
+
+def _rollout_forecast_batch(
+    forecaster: nn.Module,
+    grid: torch.Tensor,
+    series_c: torch.Tensor,
+    prediction_length: int,
+    max_context_length: int,
+    max_target_length: int,
+    this_context_length: int,
+) -> torch.Tensor:
+    """Forecast ``prediction_length`` steps ahead, autoregressively rolling the context
+    forward whenever ``prediction_length`` exceeds the model's per-pass horizon cap
+    (``max_target_length``, e.g. 672 for ``tsicl-v1``). Ported (covariate-free) from
+    ``TSICL._rollout_f`` + ``TSICL._get_context_target_coords_f`` + ``TSICL._predict_batch``.
+
+    Coordinates are relative to the (possibly extended) context, not absolute: every rollout
+    step queries the grid positions right after the context window, and the context is
+    grown by the (raw, all-quantile) mean of that step's prediction before the next step.
+    """
+    grid_threshold = max_context_length
+    quantile_chunks = []
+    remaining = prediction_length
+
+    while remaining > 0:
+        pred_len = min(max_target_length, remaining)
+        lookback_len = min(series_c.shape[1], this_context_length)
+
+        coords_c = grid[:, grid_threshold - lookback_len : grid_threshold]
+        coords_t = grid[:, grid_threshold : grid_threshold + pred_len]
+        series_c_window = series_c[:, -lookback_len:]
+
+        context = prepare_context_tensors(grid=coords_c, series_c=series_c_window)
+        series_c_ctx, coords_c_ctx = context["series_c"], context["coords_c"]
+        filled = complete_nans(series_c_ctx, coords_c_ctx)
+        series_c_ctx, coords_c_ctx = filled["values"], filled["coords"]
+
+        scaler = CustomStandardScaler(dim=1, epsilon=1e-5)
+        scaler.fit(series_c_ctx)
+        series_c_norm = scaler.transform(series_c_ctx)
+
+        query_coords = torch.cat([coords_c_ctx, coords_t], dim=1)
+        quantiles, _ = forecaster(
+            series=series_c_norm,
+            coords=coords_c_ctx,
+            target_coords=query_coords,
+            undo_asinh_transform=True,
+        )
+        quantiles = scaler.inv_transform(quantiles)
+        quantile_chunks.append(quantiles)
+
+        # extend the context with this step's forecast (raw mean across all quantile
+        # levels, matching the original rollout, not just the requested point estimator)
+        series_c = torch.cat([series_c, quantiles.mean(dim=-1, keepdim=True)], dim=1)
+        remaining -= pred_len
+
+    return torch.cat(quantile_chunks, dim=1)
+
+
+def forecast_with_tsicl(
+    forecaster: nn.Module,
+    X: np.ndarray,
+    prediction_length: int,
+    max_context_length: int,
+    max_target_length: int,
+    batch_size: int,
+    device: torch.device,
+    point_estimator: str = "median",
+    quantile_levels: Optional[List[float]] = None,
+    context_length: Optional[int] = None,
+) -> np.ndarray:
+    """Forecast `prediction_length` steps beyond a `(n_samples, n_steps, n_features)` array
+    (which may contain NaNs), feature by feature (TS-ICL models one series at a time; see the
+    channel-independence note in ``TSICL``'s docstring). Unlike imputation, the lookback window
+    is silently truncated to the most recent ``context_length`` steps rather than rejected if
+    longer than the model supports, matching the original pipeline's forecasting behavior.
+    """
+    quantile_levels = quantile_levels or [0.1, 0.3, 0.5, 0.7, 0.9]
+    quantile_indices = get_quantile_indices(forecaster, quantile_levels)
+    median_idx = quantile_levels.index(0.5) if 0.5 in quantile_levels else None
+    if point_estimator == "median" and median_idx is None:
+        point_estimator = "mean"
+
+    this_context_length = min(max_context_length, context_length) if context_length else max_context_length
+    grid_len = max_context_length + max_target_length
+
+    n_samples, n_steps, n_features = X.shape
+    flat = X.astype(np.float32).transpose(0, 2, 1).reshape(n_samples * n_features, n_steps)
+    forecaster = forecaster.to(device)
+
+    out = np.empty((flat.shape[0], prediction_length), dtype=np.float32)
+    for start in range(0, len(flat), batch_size):
+        batch = flat[start : start + batch_size]
+        series_c = torch.tensor(batch, dtype=torch.float32, device=device).unsqueeze(-1)
+        grid = make_grid(grid_len, num_samples=len(batch)).to(device)
+
+        with torch.no_grad():
+            quantiles = _rollout_forecast_batch(
+                forecaster,
+                grid,
+                series_c,
+                prediction_length,
+                max_context_length,
+                max_target_length,
+                this_context_length,
+            )[..., quantile_indices]
+
+        if point_estimator == "median":
+            point = quantiles[..., median_idx : median_idx + 1]
+        else:
+            point = quantiles.mean(-1, keepdim=True)
+        out[start : start + batch_size] = point.squeeze(-1).cpu().numpy()
+
+    # safety net: fall back to the per-row mean of the (observed part of the) context
+    # wherever the model still produced NaN, e.g. for rows with a fully-missing context
+    if not np.isfinite(out).all():
+        with warnings.catch_warnings():
+            # nanmean on an all-NaN row (fully-missing context) warns; nan_to_num handles it
+            warnings.filterwarnings("ignore", message="Mean of empty slice")
+            row_fallback = np.nan_to_num(
+                np.nanmean(np.where(np.isfinite(flat), flat, np.nan), axis=1, keepdims=True), nan=0.0
+            )
+        out = np.where(np.isfinite(out), out, row_fallback)
+
+    return out.reshape(n_samples, n_features, prediction_length).transpose(0, 2, 1)

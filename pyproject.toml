@@ -71,6 +71,7 @@ exclude = [
 # as required by that license's distribution terms (see pypots/nn/modules/tsicl/NOTICE)
 "pypots.nn.modules.tsicl" = ["NOTICE"]
 "pypots.imputation.tsicl" = ["NOTICE"]
+"pypots.forecasting.tsicl" = ["NOTICE"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pypots.version.__version__" }

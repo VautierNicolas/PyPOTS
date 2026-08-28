@@ -15,6 +15,16 @@ from .encoder import PerceiverEncoder, UnivariatePerceiverEncoder
 from .icl_learning import ICLearning, ICLearningCrossAttn
 from .inr import LocalityAwareINRDecoder
 from .network import PerceiverINR, TSICLNetwork
+from .inference_utils import (
+    HF_REPO_ID,
+    CustomStandardScaler,
+    build_tsicl_network,
+    complete_nans,
+    get_quantile_indices,
+    load_tsicl_checkpoint,
+    make_grid,
+    prepare_context_tensors,
+)
 
 __all__ = [
     "TSICLNetwork",
@@ -24,4 +34,12 @@ __all__ = [
     "ICLearning",
     "ICLearningCrossAttn",
     "LocalityAwareINRDecoder",
+    "HF_REPO_ID",
+    "CustomStandardScaler",
+    "build_tsicl_network",
+    "complete_nans",
+    "get_quantile_indices",
+    "load_tsicl_checkpoint",
+    "make_grid",
+    "prepare_context_tensors",
 ]

@@ -1,11 +1,11 @@
-# Vendored (imputation-only) inference logic ported from the TS-ICL pipeline:
+# Vendored (forecasting-only) inference logic ported from the TS-ICL pipeline:
 # https://github.com/EDF-Lab/ts-icl. Copyright (c) 2026 EDF SA. Licensed under the
 # TS-ICL Non-Commercial License v1.0, NOT under PyPOTS' BSD-3-Clause license.
 # See the NOTICE file in this directory for the full license text and restrictions
 # (non-commercial research/evaluation use only).
 
 """
-The implementation of TS-ICL for the partially-observed time-series imputation task.
+The implementation of TS-ICL for the partially-observed time-series forecasting task.
 
 """
 
@@ -20,15 +20,15 @@ import h5py
 import numpy as np
 import torch
 
-from .core import impute_with_tsicl
-from ..base import BaseImputer
+from .core import forecast_with_tsicl
+from ..base import BaseForecaster
 from ...nn.modules.tsicl import build_tsicl_network, load_tsicl_checkpoint
 
 
-class TSICL(BaseImputer):
+class TSICL(BaseForecaster):
     """The PyPOTS wrapper of the TS-ICL time-series foundation model :cite:`lenaour2026tsicl`.
 
-    TS-ICL is a pretrained time-indexed foundation model that imputes **zero-shot**,
+    TS-ICL is a pretrained time-indexed foundation model that forecasts **zero-shot**,
     without any gradient step: its architecture and pretrained checkpoint are vendored
     into PyPOTS (see ``pypots.nn.modules.tsicl``), and ``fit()`` is a no-op, the model
     having no fine-tuning procedure in the original implementation this is ported from.
@@ -44,6 +44,12 @@ class TSICL(BaseImputer):
 
     Parameters
     ----------
+    n_pred_steps :
+        The number of steps ahead to forecast. Unlike PyPOTS' trainable forecasters,
+        this isn't used to size any layer (TS-ICL is zero-shot), only to know how far
+        ahead ``predict()`` should forecast, since PyPOTS' forecasting contract doesn't
+        pass a horizon at prediction time.
+
     model_path :
         Path to a local TS-ICL checkpoint. If None, the checkpoint is downloaded
         from the Hugging Face Hub (repo ``taharnbl/TS-ICL``) on first use and cached
@@ -57,8 +63,15 @@ class TSICL(BaseImputer):
         Whether to automatically download the checkpoint from the Hub when it isn't
         already cached locally / at ``model_path``.
 
+    context_length :
+        Maximum number of most-recent lookback steps to condition the forecast on.
+        Defaults to the model's maximum context length (4096 for ``tsicl-v1``). If the
+        input series is longer, only its most recent ``context_length`` steps are used;
+        unlike imputation, this is a silent truncation rather than an error, since
+        forecasting a long history through a short lookback window is a normal use case.
+
     batch_size :
-        Number of univariate series imputed per forward pass. Note that a
+        Number of univariate series forecast per forward pass. Note that a
         multivariate sample contributes ``n_features`` series (see the note on
         channel independence below).
 
@@ -69,7 +82,7 @@ class TSICL(BaseImputer):
 
     quantile_levels :
         Quantile levels requested from the model. Only used to derive the point
-        estimate here; PyPOTS' imputation contract returns point values only.
+        estimate here; PyPOTS' forecasting contract returns point values only.
 
     device :
         The device for the model to run on.
@@ -84,22 +97,26 @@ class TSICL(BaseImputer):
     Notes
     -----
     **Channel independence.** TS-ICL models one series at a time. A multivariate
-    sample of shape ``(n_steps, n_features)`` is therefore imputed feature by
+    sample of shape ``(n_steps, n_features)`` is therefore forecast feature by
     feature, and cross-feature correlation is not exploited. On datasets where
     features are strongly correlated this is a genuine handicap against
-    multivariate models such as SAITS or ImputeFormer, and results should be
+    multivariate models such as DLinear or TimeMixer, and results should be
     read with that in mind.
 
-    **Sequence length.** ``n_steps`` must not exceed the model's maximum context
-    length (4096 for ``tsicl-v1``); TS-ICL has no imputation rollout beyond it.
+    **Long-horizon rollout.** TS-ICL predicts at most ``max_target_len`` steps
+    (672 for ``tsicl-v1``) per forward pass; forecasting further ahead rolls the
+    context forward autoregressively, feeding each chunk's prediction back in as
+    context for the next, the same way the original implementation does.
 
     """
 
     def __init__(
         self,
+        n_pred_steps: int,
         model_path: Optional[str] = None,
         checkpoint_version: str = "tsicl-v1.ckpt",
         allow_auto_download: bool = True,
+        context_length: Optional[int] = None,
         batch_size: int = 32,
         point_estimator: str = "median",
         quantile_levels: Optional[List[float]] = None,
@@ -110,14 +127,18 @@ class TSICL(BaseImputer):
         super().__init__(device=device, saving_path=saving_path, verbose=verbose)
 
         assert point_estimator in ["median", "mean"]
+        assert n_pred_steps > 0, f"n_pred_steps should be a positive int, but got {n_pred_steps}"
 
+        self.n_pred_steps = n_pred_steps
+        self.context_length = context_length
         self.batch_size = batch_size
         self.point_estimator = point_estimator
         self.quantile_levels = quantile_levels or [0.1, 0.3, 0.5, 0.7, 0.9]
 
         checkpoint = load_tsicl_checkpoint(model_path, checkpoint_version, allow_auto_download)
-        self.imputer = build_tsicl_network(checkpoint, "imputer")
+        self.forecaster = build_tsicl_network(checkpoint, "forecaster")
         self.max_context_length = checkpoint["config"]["max_context_len"]
+        self.max_target_length = checkpoint["config"]["max_target_len"]
 
     @staticmethod
     def _fetch_X(data: Union[dict, str], file_type: str = "hdf5") -> np.ndarray:
@@ -135,13 +156,6 @@ class TSICL(BaseImputer):
             f"but the actual shape of X: {X.shape}"
         )
         return X
-
-    def _check_len(self, n_steps: int) -> None:
-        if n_steps > self.max_context_length:
-            raise ValueError(
-                f"n_steps={n_steps} exceeds TS-ICL's maximum context length "
-                f"({self.max_context_length}). Split the sequences before imputing."
-            )
 
     def fit(
         self,
@@ -169,14 +183,17 @@ class TSICL(BaseImputer):
         **kwargs,
     ) -> dict:
         X = self._fetch_X(test_set, file_type)
-        self._check_len(X.shape[1])
 
-        imputed_data = impute_with_tsicl(
-            imputer=self.imputer,
+        forecasting_data = forecast_with_tsicl(
+            forecaster=self.forecaster,
             X=X,
+            prediction_length=self.n_pred_steps,
+            max_context_length=self.max_context_length,
+            max_target_length=self.max_target_length,
             batch_size=self.batch_size,
             device=self.device,
             point_estimator=self.point_estimator,
             quantile_levels=self.quantile_levels,
+            context_length=self.context_length,
         )
-        return {"imputation": imputed_data}
+        return {"forecasting": forecasting_data}
