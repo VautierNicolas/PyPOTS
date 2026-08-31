@@ -14,13 +14,12 @@ The implementation of TS-ICL for the partially-observed time-series forecasting 
 # it loads are under the TS-ICL Non-Commercial License v1.0, see this package's NOTICE.
 
 import warnings
-from typing import List, Optional, Union
 
 import torch
 
-from .core import forecast_with_tsicl
-from ..base import BaseForecaster
 from ...nn.modules.tsicl import build_tsicl_network, fetch_X, load_tsicl_checkpoint
+from ..base import BaseForecaster
+from .core import forecast_with_tsicl
 
 
 class TSICL(BaseForecaster):
@@ -111,14 +110,14 @@ class TSICL(BaseForecaster):
     def __init__(
         self,
         n_pred_steps: int,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         checkpoint_version: str = "tsicl-v1.ckpt",
         allow_auto_download: bool = True,
-        context_length: Optional[int] = None,
+        context_length: int | None = None,
         batch_size: int = 32,
         point_estimator: str = "median",
-        quantile_levels: Optional[List[float]] = None,
-        device: Optional[Union[str, torch.device, list]] = None,
+        quantile_levels: list[float] | None = None,
+        device: str | torch.device | list | None = None,
         saving_path: str = None,
         verbose: bool = True,
     ):
@@ -140,8 +139,8 @@ class TSICL(BaseForecaster):
 
     def fit(
         self,
-        train_set: Union[dict, str],
-        val_set: Optional[Union[dict, str]] = None,
+        train_set: dict | str,
+        val_set: dict | str | None = None,
         file_type: str = "hdf5",
     ) -> None:
         """Do nothing: TS-ICL is used zero-shot and has no fine-tuning procedure.
@@ -159,7 +158,7 @@ class TSICL(BaseForecaster):
 
     def predict(
         self,
-        test_set: Union[dict, str],
+        test_set: dict | str,
         file_type: str = "hdf5",
         **kwargs,
     ) -> dict:

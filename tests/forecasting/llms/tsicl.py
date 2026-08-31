@@ -15,9 +15,9 @@ from pypots.nn.functional import calc_mse
 from pypots.utils.logging import logger
 from tests.global_test_config import (
     DEVICE,
-    N_PRED_STEPS,
-    FORECASTING_TEST_SET,
     FORECASTING_H5_TEST_SET_PATH,
+    FORECASTING_TEST_SET,
+    N_PRED_STEPS,
 )
 
 

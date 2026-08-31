@@ -16,8 +16,8 @@ from pypots.utils.logging import logger
 from tests.global_test_config import (
     DATA,
     DEVICE,
-    TEST_SET,
     GENERAL_H5_TEST_SET_PATH,
+    TEST_SET,
 )
 
 

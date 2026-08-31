@@ -13,12 +13,10 @@ loading, batching, and context/target grid plumbing shared with
 
 """
 
-from typing import List, Optional
-
 import numpy as np
 import torch
-import torch.nn as nn
 from einops import repeat
+from torch import nn
 
 from ...nn.modules.tsicl import (
     CustomStandardScaler,
@@ -70,7 +68,7 @@ def impute_with_tsicl(
     batch_size: int,
     device: torch.device,
     point_estimator: str = "median",
-    quantile_levels: Optional[List[float]] = None,
+    quantile_levels: list[float] | None = None,
 ) -> np.ndarray:
     """Impute a `(n_samples, n_steps, n_features)` array with NaNs, feature by feature
     (TS-ICL models one series at a time; see the channel-independence note in ``TSICL``'s
