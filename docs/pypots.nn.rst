@@ -399,3 +399,11 @@ pypots.nn.modules.usgan
 
 .. automodule:: pypots.nn.modules.usgan
     :members:
+
+
+
+pypots.nn.modules.tsicl
+-------------------------------------------------
+
+.. automodule:: pypots.nn.modules.tsicl
+    :members:

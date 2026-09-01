@@ -126,6 +126,7 @@ The paper references and links are all listed at the bottom of this file.
 | Neural Net | TimeMixer++[^49] | [✅](examples/imputation/timemixerpp_imputation_example.py) | [✅](examples/forecasting/timemixerpp_forecasting_example.py) |  |  | [✅](examples/anomaly_detection/timemixerpp_anomalydetection_example.py) | `2025 - ICLR` |
 | LLM | Time-LLM🧑‍🔧[^45] | [✅](examples/imputation/timellm_imputation_example.py) | [✅](examples/forecasting/timellm_forecasting_example.py) |  |  |  | `2024 - ICLR` |
 | TSFM | MOMENT[^47] | [✅](examples/imputation/moment_imputation_example.py) | [✅](examples/forecasting/moment_forecasting_example.py) |  |  |  | `2024 - ICML` |
+| TSFM | TS-ICL[^56] | ✅ | ✅ |  |  |  | `2026 - arXiv` |
 | Neural Net | TSLANet[^51] | [✅](examples/imputation/tslanet_imputation_example.py) |  |  |  |  | `2024 - ICML` |
 | Neural Net | FITS🧑‍🔧[^41] | [✅](examples/imputation/fits_imputation_example.py) | [✅](examples/forecasting/fits_forecasting_example.py) |  |  |  | `2024 - ICLR` |
 | Neural Net | TimeMixer[^37] | [✅](examples/imputation/timemixer_imputation_example.py) | [✅](examples/forecasting/timemixer_forecasting_example.py) |  |  | [✅](examples/anomaly_detection/timemixer_anomalydetection_example.py) | `2024 - ICLR` |
@@ -575,3 +576,6 @@ Join our waitlist right now to receive the latest news and be the first to try i
 [^55]: Zhang, F., Du, W., Zhang, H., Yu, K., & Qu, S. (2026).
 [HELIX: Hybrid Encoding with Learnable Identity and Cross-dimensional Synthesis for Time Series Imputation](https://arxiv.org/abs/2605.02278).
 *ICML 2026*.
+[^56]: Le Naour, E., Nabil, T., & Petralia, A. (2026).
+[TS-ICL: A Flexible Time-Indexed Foundation Model for Time Series via In-Context Learning](https://arxiv.org/abs/2606.05878).
+*arXiv 2026*.

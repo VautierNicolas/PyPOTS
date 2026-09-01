@@ -80,6 +80,14 @@
      -
      -
      - ``2024 - ICML``
+   * - TSFM
+     - TS-ICL :cite:`lenaour2026tsicl`
+     - ✅
+     - ✅
+     -
+     -
+     -
+     - ``2026 - arXiv``
    * - Neural Net
      - TSLANet :cite:`eldele2024tslanet`
      - `✅ <https://github.com/WenjieDu/PyPOTS/blob/main/examples/imputation/tslanet_imputation_example.py>`_
