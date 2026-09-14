@@ -30,9 +30,7 @@ import torch.nn as nn
 _TARGET_REMAP = {
     "tsicl.TSICLNetwork": "pypots.nn.modules.tsicl.TSICLNetwork",
     "tsicl.model.network.TSICLNetwork": "pypots.nn.modules.tsicl.TSICLNetwork",
-    "tsicl.model.network.PerceiverINR": "pypots.nn.modules.tsicl.PerceiverINR",
     "tsicl.model.encoder.PerceiverEncoder": "pypots.nn.modules.tsicl.PerceiverEncoder",
-    "tsicl.model.encoder.UnivariatePerceiverEncoder": "pypots.nn.modules.tsicl.UnivariatePerceiverEncoder",
     "tsicl.model.icl_learning.ICLearning": "pypots.nn.modules.tsicl.ICLearning",
     "tsicl.model.icl_learning.ICLearningCrossAttn": "pypots.nn.modules.tsicl.ICLearningCrossAttn",
     "tsicl.model.inr.LocalityAwareINRDecoder": "pypots.nn.modules.tsicl.LocalityAwareINRDecoder",

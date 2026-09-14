@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from ..encoder import PerceiverEncoder, UnivariatePerceiverEncoder
+from ..encoder import PerceiverEncoder
 from ..icl_learning import ICLearning, ICLearningCrossAttn
 
 
@@ -20,7 +20,7 @@ class TSICLNetwork(nn.Module):
 
     def __init__(
         self,
-        encoder: PerceiverEncoder | UnivariatePerceiverEncoder,
+        encoder: PerceiverEncoder,
         head: ICLearning | ICLearningCrossAttn,
         apply_asinh_transform: bool = False,
         *args,
@@ -29,7 +29,7 @@ class TSICLNetwork(nn.Module):
         super().__init__()
 
         self.encoder = encoder
-        assert isinstance(self.encoder, PerceiverEncoder) or isinstance(self.encoder, UnivariatePerceiverEncoder)
+        assert isinstance(self.encoder, PerceiverEncoder)
 
         self.tf_icl = head
         assert isinstance(self.tf_icl, ICLearning) or isinstance(self.tf_icl, ICLearningCrossAttn)

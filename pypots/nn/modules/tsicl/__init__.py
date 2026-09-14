@@ -11,10 +11,10 @@ vendored from https://github.com/EDF-Lab/ts-icl for use by ``pypots.imputation.t
 
 """
 
-from .encoder import PerceiverEncoder, UnivariatePerceiverEncoder
+from .encoder import PerceiverEncoder
 from .icl_learning import ICLearning, ICLearningCrossAttn
 from .inr import LocalityAwareINRDecoder
-from .network import PerceiverINR, TSICLNetwork
+from .network import TSICLNetwork
 from .inference_utils import (
     HF_REPO_ID,
     CustomStandardScaler,
@@ -34,9 +34,7 @@ from .inference_utils import (
 
 __all__ = [
     "TSICLNetwork",
-    "PerceiverINR",
     "PerceiverEncoder",
-    "UnivariatePerceiverEncoder",
     "ICLearning",
     "ICLearningCrossAttn",
     "LocalityAwareINRDecoder",

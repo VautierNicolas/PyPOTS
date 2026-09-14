@@ -5,9 +5,8 @@
 
 from __future__ import annotations
 
-from .perceiver import PerceiverEncoder, UnivariatePerceiverEncoder
+from .perceiver import PerceiverEncoder
 
 __all__ = [
-    "UnivariatePerceiverEncoder",
     "PerceiverEncoder"
 ]

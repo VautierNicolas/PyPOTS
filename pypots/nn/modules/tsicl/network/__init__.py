@@ -5,10 +5,8 @@
 
 from __future__ import annotations
 
-from ._base import PerceiverINR
 from .ts_icl import TSICLNetwork
 
 __all__ = [
-    "TSICLNetwork",
-    "PerceiverINR"
+    "TSICLNetwork"
 ]
