@@ -1,8 +1,6 @@
-# Adapted (checkpoint-loading and task-agnostic inference plumbing) from the TS-ICL
-# pipeline: https://github.com/EDF-Lab/ts-icl (src/tsicl/pipeline.py, src/tsicl/utils/*).
-# Copyright (c) 2026 EDF SA. Licensed under the TS-ICL Non-Commercial License v1.0,
-# NOT under PyPOTS' BSD-3-Clause license. See the NOTICE file in this directory
-# for the full license text and restrictions (non-commercial research/evaluation use only).
+"""
+Utilities for TS-ICL model inference, adapted from the original TS-ICL codebase.
+"""
 
 """
 Task-agnostic TS-ICL inference plumbing (checkpoint loading, the TSICLNetwork builder,
