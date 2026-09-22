@@ -1,17 +1,10 @@
-# Vendored (imputation-only) inference logic ported from the TS-ICL pipeline:
-# https://github.com/EDF-Lab/ts-icl. Copyright (c) 2026 EDF SA. Licensed under the
-# TS-ICL Non-Commercial License v1.0, NOT under PyPOTS' BSD-3-Clause license.
-# See the NOTICE file in this directory for the full license text and restrictions
-# (non-commercial research/evaluation use only).
-
 """
 The implementation of TS-ICL for the partially-observed time-series imputation task.
 
 """
 
-# Created by Nicolas Vautier <nicolas.vautier@edf.fr>
-# License: BSD-3-Clause for this file; the vendored TS-ICL architecture and weights
-# it loads are under the TS-ICL Non-Commercial License v1.0, see this package's NOTICE.
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# License: BSD-3-Clause
 
 import warnings
 from typing import Optional, Union
@@ -33,12 +26,9 @@ class TSICL(BaseImputer):
 
     Warnings
     --------
-    Unlike the rest of PyPOTS, which is BSD-3-Clause, **the TS-ICL architecture and
-    pretrained checkpoints are licensed by EDF SA under the TS-ICL Non-Commercial
-    License v1.0** (for testing, evaluation, research, and benchmarking only — not
-    commercial or production use, and not as part of a hosted/SaaS service). See
-    ``pypots/nn/modules/tsicl/NOTICE`` for the full license text, or
-    https://github.com/EDF-Lab/ts-icl for a commercial-license inquiry.
+    While the TS-ICL implementation in PyPOTS is licensed under the BSD-3-Clause license,
+    the official pretrained TS-ICL weights hosted on Hugging Face are subject to the
+    TS-ICL model license.
 
     Parameters
     ----------

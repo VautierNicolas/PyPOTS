@@ -2,7 +2,7 @@
 Test cases for TSICL imputation model.
 """
 
-# Created by Nicolas Vautier <nicolas.vautier@edf.fr>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
 
 import unittest

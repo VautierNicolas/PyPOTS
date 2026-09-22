@@ -1,17 +1,16 @@
 """
-Utilities for TS-ICL model inference, adapted from the original TS-ICL codebase.
-"""
-
-"""
 Task-agnostic TS-ICL inference plumbing (checkpoint loading, the TSICLNetwork builder,
 z-normalization, and context/target grid construction) shared by
 ``pypots.imputation.tsicl`` and ``pypots.forecasting.tsicl``.
 
+Notes
+-----
+Official pretrained weights hosted on Hugging Face are subject to the TS-ICL model license.
+
 """
 
-# Created by Nicolas Vautier <nicolas.vautier@edf.fr>
-# License: BSD-3-Clause for this file; the vendored TS-ICL architecture and weights
-# it loads are under the TS-ICL Non-Commercial License v1.0, see this package's NOTICE.
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# License: BSD-3-Clause
 
 import importlib
 import warnings

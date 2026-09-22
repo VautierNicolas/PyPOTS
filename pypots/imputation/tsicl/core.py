@@ -1,9 +1,3 @@
-# Vendored (imputation-only) inference logic ported from the TS-ICL pipeline:
-# https://github.com/EDF-Lab/ts-icl (src/tsicl/pipeline.py, src/tsicl/utils/*).
-# Copyright (c) 2026 EDF SA. Licensed under the TS-ICL Non-Commercial License v1.0,
-# NOT under PyPOTS' BSD-3-Clause license. See the NOTICE file in this directory
-# for the full license text and restrictions (non-commercial research/evaluation use only).
-
 """
 The core imputation logic of TS-ICL, ported from the (zero-shot, gradient-free)
 ``TSICL.impute()`` pipeline of the original implementation. Covariates are out of
@@ -11,7 +5,14 @@ scope here since PyPOTS' imputation contract has no notion of them. The checkpoi
 loading, batching, and context/target grid plumbing shared with
 ``pypots.forecasting.tsicl`` live in ``pypots.nn.modules.tsicl``.
 
+Notes
+-----
+Official pretrained weights hosted on Hugging Face are subject to the TS-ICL model license.
+
 """
+
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# License: BSD-3-Clause
 
 from typing import Optional
 
