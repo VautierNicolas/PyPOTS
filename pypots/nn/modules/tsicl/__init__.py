@@ -1,6 +1,6 @@
 """
 The TS-ICL model architecture (Perceiver encoder + in-context-learning transformer head),
-for use by ``pypots.imputation.tsicl``.
+for use by ``pypots.imputation.tsicl`` and ``pypots.forecasting.tsicl``.
 
 Notes
 -----
@@ -8,13 +8,12 @@ Official pretrained weights hosted on Hugging Face are subject to the TS-ICL mod
 
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
 
 from .encoder import PerceiverEncoder
 from .icl_learning import ICLearning, ICLearningCrossAttn
-from .inr import LocalityAwareINRDecoder
-from .network import TSICLNetwork
 from .inference_utils import (
     HF_REPO_ID,
     CustomStandardScaler,
@@ -27,19 +26,20 @@ from .inference_utils import (
     make_grid,
     nan_row_fallback,
     prepare_context_tensors,
+    resolve_inference_device,
     resolve_quantile_selection,
     run_batched_point_estimate,
     unflatten_channel_independent,
 )
+from .network import TSICLNetwork
 
 __all__ = [
-    "TSICLNetwork",
-    "PerceiverEncoder",
-    "ICLearning",
-    "ICLearningCrossAttn",
-    "LocalityAwareINRDecoder",
     "HF_REPO_ID",
     "CustomStandardScaler",
+    "ICLearning",
+    "ICLearningCrossAttn",
+    "PerceiverEncoder",
+    "TSICLNetwork",
     "build_tsicl_network",
     "complete_nans",
     "fetch_X",
@@ -49,6 +49,7 @@ __all__ = [
     "make_grid",
     "nan_row_fallback",
     "prepare_context_tensors",
+    "resolve_inference_device",
     "resolve_quantile_selection",
     "run_batched_point_estimate",
     "unflatten_channel_independent",

@@ -66,13 +66,6 @@ exclude = [
     "requirements*",
 ]
 
-[tool.setuptools.package-data]
-# ship the TS-ICL Non-Commercial License NOTICE alongside the vendored code it covers,
-# as required by that license's distribution terms (see pypots/nn/modules/tsicl/NOTICE)
-"pypots.nn.modules.tsicl" = ["NOTICE"]
-"pypots.imputation.tsicl" = ["NOTICE"]
-"pypots.forecasting.tsicl" = ["NOTICE"]
-
 [tool.setuptools.dynamic]
 version = { attr = "pypots.version.__version__" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -108,8 +101,6 @@ line-length = 120
 target-version = "py313"
 exclude = [
     "*/template",
-    # vendored third-party code (TS-ICL architecture, kept verbatim for easier upstream syncing)
-    "pypots/nn/modules/tsicl",
 ]
 extend-exclude = [
     "*.rst",

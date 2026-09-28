@@ -2,22 +2,70 @@
 Vendored from the TS-ICL model architecture: https://github.com/EDF-Lab/ts-icl
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
+#
+# Portions of this file are adapted from the following project(s), redistributed under
+# their original license terms reproduced below:
+#   - AROMA: https://github.com/LouisSerrano/aroma
+#   - perceiver-pytorch: https://github.com/lucidrains/perceiver-pytorch
+#
+# ---- AROMA (https://github.com/LouisSerrano/aroma) ----
+#
+# MIT License
+#
+# Copyright (c) 2024 LouisSerrano
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# ---- perceiver-pytorch (https://github.com/lucidrains/perceiver-pytorch) ----
+#
+# MIT License
+#
+# Copyright (c) 2021 Phil Wang
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 from __future__ import annotations
 
 from functools import wraps
-from typing import Any, Callable, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Sequence
 
 import numpy as np
 import torch
-import torch.nn as nn
-from einops import rearrange
-
-
-def count_parameters(model: nn.Module) -> int:
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def exists(val: Any) -> bool:
@@ -44,66 +92,14 @@ def cache_fn(f: Callable) -> Callable:
     return cached_fn
 
 
-def dropout_seq(
-    images: torch.Tensor,
-    coordinates: torch.Tensor,
-    mask: Optional[torch.Tensor] = None,
-    dropout: float = 0.25
-) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-    """
-    Randomly drop some elements of tensors along the sequence dimension.
-
-    Args:
-        images (torch.Tensor): values tensor of shape `(bs, seq_len, ...)`
-        coordinates (torch.Tensor): tensor of coordinates of shape `(bs, seq_len, ...)`
-        mask (torch.Tensor): boolean mask of shape `(bs, seq_len, ...)`
-        dropout (float): dropout fraction
-    
-    Returns:
-        Same input tensors with a `dropout` fraction of elements removed from the sequence dim
-    """
-    
-    b, n, *_, device = *images.shape, images.device
-
-    # get the indices of the elements to dropout (along seq dim):
-    logits       = torch.randn(b, n, device=device)
-    keep_prob    = 1.0 - dropout
-    num_keep     = max(1, int(keep_prob * n))
-    keep_indices = logits.topk(num_keep, dim=1).indices  # (bs, num_keep)
-
-    batch_indices = torch.arange(b, device=device)
-    batch_indices = rearrange(batch_indices, "b -> b 1") # (bs, 1)
-
-    if mask is None:
-        images      = images[batch_indices, keep_indices]       # (bs, num_keep, ...)
-        coordinates = coordinates[batch_indices, keep_indices]  # (bs, num_keep, ...)
-
-        return images, coordinates
-
-    else:
-        images      = images[batch_indices, keep_indices]
-        coordinates = coordinates[batch_indices, keep_indices]
-        mask        = mask[batch_indices, keep_indices]
-
-        return images, coordinates, mask
-
-
-class DiagonalGaussianDistribution(object):
-
-    def __init__(
-        self,
-        mean: torch.Tensor,
-        logvar: torch.Tensor,
-        deterministic: bool = False
-    ) -> None:
+class DiagonalGaussianDistribution:
+    def __init__(self, mean: torch.Tensor, logvar: torch.Tensor, deterministic: bool = False) -> None:
 
         self.mean = mean
         self.deterministic = deterministic
-        
+
         if self.deterministic:
-            self.var = self.std = torch.zeros_like(self.mean).to(
-                device=self.mean.device
-            )
+            self.var = self.std = torch.zeros_like(self.mean).to(device=self.mean.device)
         else:
             self.logvar = logvar
             self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
@@ -111,30 +107,26 @@ class DiagonalGaussianDistribution(object):
             self.var = torch.exp(self.logvar)
 
     def sample(self, K: int = 1) -> torch.Tensor:
-        """ Draw `K`samples from the Diag Gaussian distrib."""
+        """Draw `K`samples from the Diag Gaussian distrib."""
 
         if K == 1:
-            x = self.mean + self.std * torch.randn(self.mean.shape).to(
-                device=self.mean.device
-            )
+            x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.mean.device)
             return x
         else:
             # XXX check dims in repeat for time series
-            x = self.mean[None, ...].repeat([K, 1, 1, 1]) + self.std[None, ...].repeat(
-                K, 1, 1, 1
-            ) * torch.randn([K, *self.mean.shape]).to(device=self.mean.device)
+            x = self.mean[None, ...].repeat([K, 1, 1, 1]) + self.std[None, ...].repeat(K, 1, 1, 1) * torch.randn(
+                [K, *self.mean.shape]
+            ).to(device=self.mean.device)
             return x
 
-    def kl(self, other = None) -> torch.Tensor:
-        """ Compute KL divergence from object to another instance of `DiagonalGaussianDistribution`"""
+    def kl(self, other=None) -> torch.Tensor:
+        """Compute KL divergence from object to another instance of `DiagonalGaussianDistribution`"""
 
         if self.deterministic:
             return torch.Tensor([0.0])
         else:
             if other is None:
-                return 0.5 * torch.mean(
-                    torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar, dim=[1, 2]
-                )
+                return 0.5 * torch.mean(torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar, dim=[1, 2])
             else:
                 return 0.5 * torch.mean(
                     torch.pow(self.mean - other.mean, 2) / other.var
@@ -145,15 +137,11 @@ class DiagonalGaussianDistribution(object):
                     dim=[1, 2],
                 )
 
-    def nll(
-        self,
-        sample: torch.Tensor,
-        dims: Sequence = [1, 2]
-    ) -> torch.Tensor:
-        
+    def nll(self, sample: torch.Tensor, dims: Sequence = [1, 2]) -> torch.Tensor:
+
         if self.deterministic:
             return torch.Tensor([0.0])
-        
+
         logtwopi = np.log(2.0 * np.pi)
         return 0.5 * torch.sum(
             logtwopi + self.logvar + torch.pow(sample - self.mean, 2) / self.var,
@@ -162,13 +150,3 @@ class DiagonalGaussianDistribution(object):
 
     def mode(self) -> torch.Tensor:
         return self.mean
-
-
-def linear_scheduler(
-    start: float,
-    end: float,
-    num_steps: int
-) -> Sequence[float]:
-    delta = (end - start) / num_steps
-    return [start + i * delta for i in range(num_steps)]
-

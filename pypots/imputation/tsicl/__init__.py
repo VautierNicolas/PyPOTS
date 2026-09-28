@@ -14,7 +14,8 @@ Official pretrained weights hosted on Hugging Face are subject to the TS-ICL mod
 
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
 
 from .model import TSICL

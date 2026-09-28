@@ -9,8 +9,44 @@ Official pretrained weights hosted on Hugging Face are subject to the TS-ICL mod
 
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
+#
+# Portions of this file are adapted from the following project(s), redistributed under
+# their original license terms reproduced below:
+#   - TabICL: https://github.com/soda-inria/tabicl
+#
+# ---- TabICL (https://github.com/soda-inria/tabicl) ----
+#
+# BSD 3-Clause License
+#
+# Copyright (c) 2025, Soda team @ Inria
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import importlib
 import warnings
@@ -20,7 +56,9 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import h5py
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
+
+from ....utils.logging import logger
 
 # Where the checkpoint's Hydra-style ``_target_`` dotted paths (e.g. "tsicl.model.encoder.PerceiverEncoder")
 # originally pointed, remapped to this vendored copy of the architecture.
@@ -30,10 +68,16 @@ _TARGET_REMAP = {
     "tsicl.model.encoder.PerceiverEncoder": "pypots.nn.modules.tsicl.PerceiverEncoder",
     "tsicl.model.icl_learning.ICLearning": "pypots.nn.modules.tsicl.ICLearning",
     "tsicl.model.icl_learning.ICLearningCrossAttn": "pypots.nn.modules.tsicl.ICLearningCrossAttn",
-    "tsicl.model.inr.LocalityAwareINRDecoder": "pypots.nn.modules.tsicl.LocalityAwareINRDecoder",
 }
 
 HF_REPO_ID = "taharnbl/TS-ICL"
+
+_WEIGHTS_LICENSE_NOTICE = (
+    "The official TS-ICL pretrained weights (Hugging Face repo {repo}) are licensed by EDF SA under the "
+    "TS-ICL Non-Commercial License, NOT under PyPOTS' BSD-3-Clause license: they may only be used for "
+    "non-commercial purposes. Please read https://huggingface.co/{repo} before using them. "
+    "For commercial licensing, contact tsicl-contact@edf.fr."
+)
 
 
 def _instantiate(config):
@@ -73,6 +117,10 @@ def load_tsicl_checkpoint(
 
     filename = checkpoint_version
 
+    if model_path is None or not Path(model_path).exists():
+        # the official weights are fetched (or reused from the local HF cache): remind their license terms
+        logger.warning(f"‼️ {_WEIGHTS_LICENSE_NOTICE.format(repo=HF_REPO_ID)}")
+
     if model_path is None:
         try:
             resolved_path = Path(hf_hub_download(repo_id=HF_REPO_ID, filename=filename, local_files_only=True))
@@ -81,7 +129,7 @@ def load_tsicl_checkpoint(
                 raise ValueError(
                     f"Checkpoint '{filename}' not cached and automatic download is disabled.\n"
                     f"Set allow_auto_download=True to download the checkpoint from Hugging Face Hub ({HF_REPO_ID})."
-                )
+                ) from None
             resolved_path = Path(hf_hub_download(repo_id=HF_REPO_ID, filename=filename))
     else:
         resolved_path = Path(model_path)
@@ -234,10 +282,9 @@ def fetch_X(data: Union[dict, str], file_type: str = "hdf5") -> np.ndarray:
         X = np.asarray(X)
     if isinstance(X, torch.Tensor):
         X = X.detach().cpu().numpy()
-    assert len(X.shape) == 3, (
-        f"Input X should have 3 dimensions [n_samples, n_steps, n_features], "
-        f"but the actual shape of X: {X.shape}"
-    )
+    assert (
+        len(X.shape) == 3
+    ), f"Input X should have 3 dimensions [n_samples, n_steps, n_features], but the actual shape of X: {X.shape}"
     return X
 
 
@@ -254,6 +301,11 @@ def resolve_quantile_selection(
     quantile_indices = get_quantile_indices(network, quantile_levels)
     median_idx = quantile_levels.index(0.5) if 0.5 in quantile_levels else None
     if point_estimator == "median" and median_idx is None:
+        warnings.warn(
+            f"Point estimator is `median` but `0.5` not in `quantile_levels`={quantile_levels}, "
+            "switch to `mean` estimator instead",
+            stacklevel=2,
+        )
         point_estimator = "mean"
     return quantile_indices, median_idx, point_estimator
 
@@ -311,10 +363,16 @@ def run_batched_point_estimate(
     the caller as `predict_batch_fn`, which takes a `(bs, n_steps, 1)` context tensor and
     returns its predicted quantiles of shape `(bs, output_len, num_quantiles)`.
     """
-    out = np.empty((flat.shape[0], output_len), dtype=np.float32)
+    out = np.full((flat.shape[0], output_len), np.nan, dtype=np.float32)
     for start in range(0, len(flat), batch_size):
-        batch = flat[start : start + batch_size]
-        series_c = torch.tensor(batch, dtype=torch.float32, device=device).unsqueeze(-1)
+        rows = np.arange(start, min(start + batch_size, len(flat)))
+        # fully-missing series give the model no context to condition on (a batch made only of them
+        # would leave it with zero-length inputs), so they're skipped and left as NaN for
+        # `nan_row_fallback` to fill; the other series of the batch are unaffected by this
+        rows = rows[np.isfinite(flat[rows]).any(axis=1)]
+        if len(rows) == 0:
+            continue
+        series_c = torch.tensor(flat[rows], dtype=torch.float32, device=device).unsqueeze(-1)
 
         with torch.no_grad():
             quantiles = predict_batch_fn(series_c)[..., quantile_indices]
@@ -323,6 +381,19 @@ def run_batched_point_estimate(
             point = quantiles[..., median_idx : median_idx + 1]
         else:
             point = quantiles.mean(-1, keepdim=True)
-        out[start : start + batch_size] = point.squeeze(-1).cpu().numpy()
+        out[rows] = point.squeeze(-1).cpu().numpy()
 
     return out
+
+
+def resolve_inference_device(device: Union[torch.device, List[torch.device]]) -> torch.device:
+    """Pick the single device TS-ICL inference runs on. A list of devices (PyPOTS' multi-GPU
+    training setup) is not supported for this zero-shot model: inference then runs on the first one.
+    """
+    if isinstance(device, list):
+        logger.warning(
+            f"‼️ TS-ICL is zero-shot and doesn't support parallel inference on multiple devices, "
+            f"running on the first given device {device[0]} only."
+        )
+        return device[0]
+    return device

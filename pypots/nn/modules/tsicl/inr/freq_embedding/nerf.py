@@ -2,8 +2,37 @@
 Vendored from the TS-ICL model architecture: https://github.com/EDF-Lab/ts-icl
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
+#
+# Portions of this file are adapted from the following project(s), redistributed under
+# their original license terms reproduced below:
+#   - AROMA: https://github.com/LouisSerrano/aroma
+#
+# ---- AROMA (https://github.com/LouisSerrano/aroma) ----
+#
+# MIT License
+#
+# Copyright (c) 2024 LouisSerrano
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 from __future__ import annotations
 
@@ -11,11 +40,10 @@ from typing import Any, Dict, Sequence
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class MultiScaleNeRFEncoding(nn.Module):
-
     def __init__(
         self,
         num_freqs_per_scale: int,
@@ -42,21 +70,19 @@ class MultiScaleNeRFEncoding(nn.Module):
         # self.bands = nn.ParameterDict(self.initialize_bands(scales))
         dict_bands = self.initialize_bands(scales)
         self.band_names = list(dict_bands.keys())
-        [self.register_buffer(key,band) for key,band in dict_bands.items()]
+        [self.register_buffer(key, band) for key, band in dict_bands.items()]
 
         # Calculate output dimension
         self.out_dim = 0
         if include_input:
             self.out_dim += input_dim
-        for scale in scales:
-            self.out_dim += (
-                num_freqs_per_scale * input_dim * 2
-            )  # sin and cos for each frequency band
+        for _ in scales:
+            self.out_dim += num_freqs_per_scale * input_dim * 2  # sin and cos for each frequency band
 
         if include_input:
             self.out_dim_per_scale = num_freqs_per_scale * input_dim * 2 + 1
         else:
-            self.out_dim_per_scale = num_freqs_per_scale * input_dim * 2 
+            self.out_dim_per_scale = num_freqs_per_scale * input_dim * 2
 
     def initialize_bands(self, scales):
         s = [0] + scales
@@ -68,9 +94,7 @@ class MultiScaleNeRFEncoding(nn.Module):
                 start, end = s[0], s[j + 1]
 
             if self.log_sampling:
-                band = self.base_freq ** torch.linspace(
-                    start, end, steps=self.num_freqs_per_scale
-                )
+                band = self.base_freq ** torch.linspace(start, end, steps=self.num_freqs_per_scale)
             else:
                 band = torch.linspace(
                     self.base_freq**start,
@@ -79,7 +103,7 @@ class MultiScaleNeRFEncoding(nn.Module):
                 )
             if self.use_pi:
                 band = band * np.pi
-            bands[f"{s[j+1]}".replace('.','_')] = band
+            bands[f"{s[j + 1]}".replace(".", "_")] = band
             # bands[f"{s[j+1]}"] = nn.Parameter(band, requires_grad=False)
 
         return bands
@@ -119,8 +143,6 @@ class MultiScaleNeRFEncoding(nn.Module):
         }
 
 
-
-
 class NeRFEncoding(nn.Module):
     """PyTorch implementation of regular positional embedding, as used in the original NeRF and Transformer papers."""
 
@@ -134,7 +156,6 @@ class NeRFEncoding(nn.Module):
         input_dim: int = 3,
         base_freq: float | int = 2,
     ) -> None:
-        
         """Initialize the module.
         Args:
             num_freq (int): The number of frequency bands to sample.
@@ -149,59 +170,49 @@ class NeRFEncoding(nn.Module):
 
         super().__init__()
 
-        self.num_freq      = num_freq
+        self.num_freq = num_freq
         self.max_freq_log2 = max_freq_log2
-        self.log_sampling  = log_sampling
+        self.log_sampling = log_sampling
         self.include_input = include_input
-        self.out_dim  = 0
-        self.base_freq     = base_freq
+        self.out_dim = 0
+        self.base_freq = base_freq
 
         if include_input:
             self.out_dim += input_dim
 
         if self.log_sampling:
-            bands = self.base_freq ** torch.linspace(
-                min_freq_log2, max_freq_log2, steps=num_freq
-            ) # [num_freq,]
+            bands = self.base_freq ** torch.linspace(min_freq_log2, max_freq_log2, steps=num_freq)  # [num_freq,]
         else:
-            bands = self.base_freq * torch.arange(
-                min_freq_log2, num_freq, 1
-                )
+            bands = self.base_freq * torch.arange(min_freq_log2, num_freq, 1)
 
-        bands = bands.to(dtype=torch.float32) # [num_freq,]
+        bands = bands.to(dtype=torch.float32)  # [num_freq,]
 
         # The out_dim is really just input_dim + num_freq * input_dim * 2 (for sin and cos)
         self.out_dim += bands.shape[0] * input_dim * 2
-        self.register_buffer('bands', bands)
+        self.register_buffer("bands", bands)
         # self.bands = nn.Parameter(self.bands).requires_grad_(False)
 
-    def forward(
-        self,
-        coords: torch.Tensor,
-        with_batch: bool = True
-    ) -> torch.Tensor:
-        
+    def forward(self, coords: torch.Tensor, with_batch: bool = True) -> torch.Tensor:
         """Embeds the coordinates.
         Args:
             coords (torch.FloatTensor): Coordinates of shape [N, input_dim]
         Returns:
             (torch.FloatTensor): Embeddings of shape [N, input_dim + out_dim] or [N, out_dim].
         """
-        
+
         if with_batch:
             N = coords.shape[0]
-            winded = (coords[...,None, :] * self.bands[None,None,:,None]).reshape(
-                N, coords.shape[1], coords.shape[-1] * self.num_freq)
-            encoded = torch.cat([torch.sin(winded*2*torch.pi), torch.cos(winded*2*torch.pi)], dim=-1)
+            winded = (coords[..., None, :] * self.bands[None, None, :, None]).reshape(
+                N, coords.shape[1], coords.shape[-1] * self.num_freq
+            )
+            encoded = torch.cat([torch.sin(winded * 2 * torch.pi), torch.cos(winded * 2 * torch.pi)], dim=-1)
             if self.include_input:
                 encoded = torch.cat([coords, encoded], dim=-1)
 
         else:
             N = coords.shape[0]
-            winded = (coords[:, None] * self.bands[None, :, None]).reshape(
-                N, coords.shape[1] * self.num_freq
-            )
-            encoded = torch.cat([torch.sin(winded*2*torch.pi), torch.cos(winded*2*torch.pi)], dim=-1)
+            winded = (coords[:, None] * self.bands[None, :, None]).reshape(N, coords.shape[1] * self.num_freq)
+            encoded = torch.cat([torch.sin(winded * 2 * torch.pi), torch.cos(winded * 2 * torch.pi)], dim=-1)
             if self.include_input:
                 encoded = torch.cat([coords, encoded], dim=-1)
         return encoded
@@ -221,20 +232,3 @@ class NeRFEncoding(nn.Module):
             "Max Frequency": f"2^{self.max_freq_log2}",
             "Include Input": self.include_input,
         }
-
-
-if __name__ == "__main__":
-    multi_scale_nerf = MultiScaleNeRFEncoding(
-        num_freqs_per_scale = 8,
-        log_sampling        = True,
-        include_input       = False,
-        input_dim           = 2,
-        disjoint            = False
-    )
-    # print(multi_scale_nerf.bands["3"])
-    # print(multi_scale_nerf.bands["4"])
-    # print(multi_scale_nerf.bands["5"])
-    print(multi_scale_nerf.out_dim)
-    x = torch.Tensor([0.1, 0.2]).unsqueeze(0)
-    y = multi_scale_nerf(x)
-    print("y", y.shape)

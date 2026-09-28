@@ -2,7 +2,8 @@
 Vendored from the TS-ICL model architecture: https://github.com/EDF-Lab/ts-icl
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
 
 from __future__ import annotations
@@ -10,19 +11,13 @@ from __future__ import annotations
 from .utils import (
     DiagonalGaussianDistribution,
     cache_fn,
-    count_parameters,
     default,
-    dropout_seq,
     exists,
-    linear_scheduler,
 )
 
 __all__ = [
-    "count_parameters",
-    "exists",
-    "default",
-    "cache_fn",
-    "dropout_seq",
     "DiagonalGaussianDistribution",
-    "linear_scheduler"
+    "cache_fn",
+    "default",
+    "exists",
 ]

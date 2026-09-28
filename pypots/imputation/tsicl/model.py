@@ -3,7 +3,8 @@ The implementation of TS-ICL for the partially-observed time-series imputation t
 
 """
 
-# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>, and Adrien Petralia <adrien.petralia@gmail.com>
+# Created by Etienne Le Naour <etienne.le-naour@edf.fr>, Tahar Nabil <tahar.nabil@edf.fr>,
+# and Adrien Petralia <adrien.petralia@gmail.com>
 # License: BSD-3-Clause
 
 import warnings
@@ -11,7 +12,7 @@ from typing import Optional, Union
 
 import torch
 
-from ...nn.modules.tsicl import build_tsicl_network, fetch_X, load_tsicl_checkpoint
+from ...nn.modules.tsicl import build_tsicl_network, fetch_X, load_tsicl_checkpoint, resolve_inference_device
 from ..base import BaseImputer
 from .core import impute_with_tsicl
 
@@ -27,8 +28,11 @@ class TSICL(BaseImputer):
     Warnings
     --------
     While the TS-ICL implementation in PyPOTS is licensed under the BSD-3-Clause license,
-    the official pretrained TS-ICL weights hosted on Hugging Face are subject to the
-    TS-ICL model license.
+    the official pretrained TS-ICL weights hosted on Hugging Face (and downloaded by default,
+    see ``allow_auto_download``) are licensed by EDF SA under the **TS-ICL Non-Commercial
+    License**: they may only be used for non-commercial purposes. See
+    https://huggingface.co/taharnbl/TS-ICL for the license terms, and contact
+    tsicl-contact@edf.fr for commercial licensing.
 
     Parameters
     ----------
@@ -63,7 +67,7 @@ class TSICL(BaseImputer):
         The device for the model to run on.
 
     saving_path :
-        The path for automatically saving model checkpoints and tensorboard files.
+        The path for automatically saving the model when calling ``fit()``.
         Will not save if not given.
 
     verbose :
@@ -92,7 +96,7 @@ class TSICL(BaseImputer):
         point_estimator: str = "median",
         quantile_levels: Optional[list[float]] = None,
         device: Optional[Union[str, torch.device, list]] = None,
-        saving_path: str = None,
+        saving_path: Optional[str] = None,
         verbose: bool = True,
     ):
         super().__init__(device=device, saving_path=saving_path, verbose=verbose)
@@ -104,7 +108,9 @@ class TSICL(BaseImputer):
         self.quantile_levels = quantile_levels or [0.1, 0.3, 0.5, 0.7, 0.9]
 
         checkpoint = load_tsicl_checkpoint(model_path, checkpoint_version, allow_auto_download)
-        self.imputer = build_tsicl_network(checkpoint, "imputer")
+        # zero-shot inference runs on a single device
+        self.device = resolve_inference_device(self.device)
+        self.model = build_tsicl_network(checkpoint, "imputer").to(self.device)
         self.max_context_length = checkpoint["config"]["max_context_len"]
 
     def _check_len(self, n_steps: int) -> None:
@@ -130,8 +136,11 @@ class TSICL(BaseImputer):
         """
         warnings.warn(
             "TS-ICL is a pretrained foundation model used zero-shot here and has no "
-            "fine-tuning procedure in this integration. Please run func `predict()` directly."
+            "fine-tuning procedure in this integration. Please run func `predict()` directly.",
+            stacklevel=2,
         )
+        # keep PyPOTS' contract: the model is saved into `saving_path` (if given) once "trained"
+        self._auto_save_model_if_necessary()
 
     def predict(
         self,
@@ -143,7 +152,7 @@ class TSICL(BaseImputer):
         self._check_len(X.shape[1])
 
         imputed_data = impute_with_tsicl(
-            imputer=self.imputer,
+            imputer=self.model,
             X=X,
             batch_size=self.batch_size,
             device=self.device,
