@@ -579,4 +579,3 @@ Join our waitlist right now to receive the latest news and be the first to try i
 [^56]: Le Naour, E., Nabil, T., & Petralia, A. (2026).
 [TS-ICL: A Flexible Time-Indexed Foundation Model for Time Series via In-Context Learning](https://arxiv.org/abs/2606.05878).
 *arXiv 2026*.
-Note: TS-ICL's official pretrained weights are released by EDF SA under the TS-ICL Non-Commercial License (non-commercial use only).

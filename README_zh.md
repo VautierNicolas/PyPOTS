@@ -561,4 +561,3 @@ test recently ;-) Follow us, and stay tuned!
 [^56]: Le Naour, E., Nabil, T., & Petralia, A. (2026).
 [TS-ICL: A Flexible Time-Indexed Foundation Model for Time Series via In-Context Learning](https://arxiv.org/abs/2606.05878).
 *arXiv 2026*.
-注意: TS-ICL官方预训练权重由EDF SA以TS-ICL非商业许可证发布 (仅限非商业用途)。
